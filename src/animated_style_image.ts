@@ -22,7 +22,8 @@ type GPUState = {
 /**
  * An animated icon or pattern for {@link Map.addImage}, loaded from a URL with
  * {@link AnimatedStyleImage.fromURL}. Any animated format the browser's `ImageDecoder`
- * understands works: GIF, animated WebP, APNG, animated AVIF.
+ * understands works: GIF, animated WebP, APNG, animated AVIF. Safari has no `ImageDecoder`
+ * yet, and there GIF alone works, through a JS decoder loaded on demand.
  *
  * Every frame is uploaded once, packed into a grid in a private "strip" texture. Advancing a
  * frame copies it straight from that strip into the image's slot in MapLibre's shared atlas
@@ -69,12 +70,20 @@ export class AnimatedStyleImage extends WebGLStyleImage {
                 );
             }
         }
+
+        // Browsers show near-zero GIF delays at 100 ms, and a 0 would make `render` skip the
+        // frame entirely, so the same floor is applied here.
+        if (frames.length > 1) {
+            for (const frame of frames) {
+                if (frame.duration < 11) frame.duration = 100;
+            }
+        }
     }
 
     /**
      * Fetch and decode an animated image. Any format the browser's `ImageDecoder` supports
      * works: GIF, animated WebP, APNG, animated AVIF. A still image loads as a single frame
-     * that never changes.
+     * that never changes. On a browser with no `ImageDecoder`, only GIF loads.
      *
      * The whole image is decoded up front, so an animation is limited by what fits in one
      * texture rather than by bandwidth.
@@ -83,12 +92,6 @@ export class AnimatedStyleImage extends WebGLStyleImage {
      * @param fetchOptions - Passed through to `fetch`, for an `AbortSignal` or credentials.
      */
     static async fromURL(url: string, fetchOptions?: RequestInit): Promise<AnimatedStyleImage> {
-        if (typeof ImageDecoder === 'undefined') {
-            throw new Error(
-                'This browser has no ImageDecoder, which AnimatedStyleImage needs in order to decode an animated image.',
-            );
-        }
-
         const response = await fetch(url, fetchOptions);
         if (!response.ok) throw new Error(`Could not fetch ${url}: ${response.status} ${response.statusText}.`);
         if (!response.body) throw new Error(`${url} was served with no body.`);
@@ -97,6 +100,27 @@ export class AnimatedStyleImage extends WebGLStyleImage {
         if (!contentType) throw new Error(`${url} was served with no content-type.`);
         // Servers append parameters like `; charset=binary`, which `ImageDecoder` rejects.
         const type = (contentType.split(';')[0] ?? contentType).trim();
+
+        // Safari has no `ImageDecoder` until it ships the WebCodecs image API, which landed in
+        // WebKit in August 2026. GIF is nearly every animated icon, so a decoder small enough
+        // to carry is loaded for it there, and only when it is actually needed.
+        if (typeof ImageDecoder === 'undefined') {
+            if (type !== 'image/gif') {
+                throw new Error(
+                    `This browser has no ImageDecoder, so it can only load a GIF, but ${url} was served as "${type}".`,
+                );
+            }
+            const {decodeFrames} = await import('modern-gif');
+            // `decodeFrames` composites each frame's patch over the previous one and honours
+            // the disposal method, so every frame comes back whole and the same size.
+            return new AnimatedStyleImage(
+                decodeFrames(await response.arrayBuffer()).map(({width, height, data, delay}) => {
+                    premultiply(data);
+                    return {width, height, data, duration: delay};
+                }),
+            );
+        }
+
         if (!(await ImageDecoder.isTypeSupported(type))) {
             throw new Error(`This browser cannot decode "${type}", which is what ${url} was served as.`);
         }
@@ -127,25 +151,11 @@ export class AnimatedStyleImage extends WebGLStyleImage {
                     // which may be BGRA or YUV, to straight-alpha RGBA.
                     context.drawImage(image, 0, 0);
                     const data = context.getImageData(0, 0, width, height).data;
-                    // MapLibre's atlas holds premultiplied pixels. Premultiplying once here
-                    // keeps every upload, including re-uploads after a context loss, copy-only.
-                    for (let offset = 0; offset < data.length; offset += 4) {
-                        const alpha = (data[offset + 3] ?? 0) / 255;
-                        data[offset + 0] = (data[offset + 0] ?? 0) * alpha;
-                        data[offset + 1] = (data[offset + 1] ?? 0) * alpha;
-                        data[offset + 2] = (data[offset + 2] ?? 0) * alpha;
-                    }
+                    premultiply(data);
                     // `VideoFrame.duration` is in microseconds, and is null for a still image.
                     frames.push({width, height, data, duration: (image.duration ?? 0) / 1000});
                 } finally {
                     image.close();
-                }
-            }
-            // Browsers show near-zero GIF delays at 100 ms, and a 0 would make `render` skip
-            // the frame entirely, so the same floor is applied here.
-            if (frames.length > 1) {
-                for (const frame of frames) {
-                    if (frame.duration < 11) frame.duration = 100;
                 }
             }
             return new AnimatedStyleImage(frames);
@@ -256,6 +266,20 @@ export class AnimatedStyleImage extends WebGLStyleImage {
         this._gl?.deleteFramebuffer(this._gpu.framebuffer);
         this._gl?.deleteTexture(this._gpu.strip);
         this._gpu = undefined;
+    }
+}
+
+/**
+ * Turn straight-alpha RGBA into the premultiplied pixels MapLibre's atlas holds, in place.
+ * Doing it once at decode keeps every upload, including re-uploads after a context loss,
+ * copy-only.
+ */
+function premultiply(data: Uint8ClampedArray): void {
+    for (let offset = 0; offset < data.length; offset += 4) {
+        const alpha = (data[offset + 3] ?? 0) / 255;
+        data[offset + 0] = (data[offset + 0] ?? 0) * alpha;
+        data[offset + 1] = (data[offset + 1] ?? 0) * alpha;
+        data[offset + 2] = (data[offset + 2] ?? 0) * alpha;
     }
 }
 

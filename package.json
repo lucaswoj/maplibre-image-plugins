@@ -10,7 +10,7 @@
         "test-eslint": "eslint .",
         "test-prettier": "prettier --check .",
         "fix": "prettier --write . && eslint --fix .",
-        "build-site": "esbuild src/index.ts --bundle --format=esm --external:maplibre-gl --outfile=docs/plugins.mjs && cp node_modules/maplibre-gl/dist/maplibre-gl.mjs node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs node_modules/maplibre-gl/dist/maplibre-gl-worker-dev.mjs node_modules/maplibre-gl/dist/maplibre-gl.css node_modules/tweakpane/dist/tweakpane.min.js docs/vendor/"
+        "build-site": "esbuild src/index.ts --bundle --format=esm --external:maplibre-gl --splitting --outdir=docs --entry-names=plugins --chunk-names=chunks/[name]-[hash] --out-extension:.js=.mjs && cp node_modules/maplibre-gl/dist/maplibre-gl.mjs node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs node_modules/maplibre-gl/dist/maplibre-gl-worker-dev.mjs node_modules/maplibre-gl/dist/maplibre-gl.css node_modules/tweakpane/dist/tweakpane.min.js docs/vendor/"
     },
     "peerDependencies": {
         "maplibre-gl": ">=6.5"
@@ -24,5 +24,8 @@
         "tweakpane": "^4.0.5",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.41.0"
+    },
+    "dependencies": {
+        "modern-gif": "^2.1.0"
     }
 }

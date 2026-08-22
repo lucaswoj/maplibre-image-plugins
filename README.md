@@ -2,6 +2,8 @@
 
 Animated style image plugins for [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js), built on the public `StyleImageInterface` API. Any animated format the browser's `ImageDecoder` understands works: GIF, animated WebP, APNG, animated AVIF.
 
+Safari has no `ImageDecoder`, so there GIF alone works, decoded by [`modern-gif`](https://github.com/qq15725/modern-gif) loaded on demand. WebKit landed the WebCodecs image API in August 2026 ([bug 315546](https://bugs.webkit.org/show_bug.cgi?id=315546)), enabled by default, so the fallback can go once that ships. `modern-gif` is the one that returns fully composited, uniform-size frames honouring disposal 0-3; `gifuct-js` and `omggif` return patches and leave the compositing to you, and `decode-gif` gets it wrong by allocating a fresh zeroed buffer per frame.
+
 `AnimatedStyleImage` animates on the GPU: every frame is uploaded once, and advancing a frame is a single GPU-to-GPU copy into MapLibre's atlas. The map can go idle between frames.
 
 `PulsingDotStyleImage` is a pulsing location dot drawn entirely by a fragment shader, with no image asset or per-frame pixel upload. The dot, stroke, and halo each take a radius and a color, and the pulse speed is configurable.
@@ -22,7 +24,7 @@ Both plugins wake the map on a timer and let it rest between animation frames. O
 
 ## Demo site
 
-`docs/` is a GitHub Pages site showing both plugins, with Tweakpane controls for the pulsing dot and a live renders-and-idles overlay. `npm run build-site` rebuilds its plugin bundle and vendored dependencies; preview with any static server, e.g. `python3 -m http.server --directory docs`.
+`docs/` is a GitHub Pages site showing both plugins, with Tweakpane controls for the pulsing dot and a live renders-and-idles overlay. `npm run build-site` rebuilds its plugin bundle and vendored dependencies; preview with any static server, e.g. `python3 -m http.server --directory docs`. It builds with `--splitting` so the GIF decoder lands in a lazy chunk under `docs/chunks/` instead of inflating `docs/plugins.mjs`; esbuild inlines a dynamic import when splitting is off.
 
 ## Developing
 

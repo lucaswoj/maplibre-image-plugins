@@ -70,11 +70,16 @@ var AnimatedStyleImage = class _AnimatedStyleImage extends WebGLStyleImage {
         );
       }
     }
+    if (frames.length > 1) {
+      for (const frame of frames) {
+        if (frame.duration < 11) frame.duration = 100;
+      }
+    }
   }
   /**
    * Fetch and decode an animated image. Any format the browser's `ImageDecoder` supports
    * works: GIF, animated WebP, APNG, animated AVIF. A still image loads as a single frame
-   * that never changes.
+   * that never changes. On a browser with no `ImageDecoder`, only GIF loads.
    *
    * The whole image is decoded up front, so an animation is limited by what fits in one
    * texture rather than by bandwidth.
@@ -83,17 +88,26 @@ var AnimatedStyleImage = class _AnimatedStyleImage extends WebGLStyleImage {
    * @param fetchOptions - Passed through to `fetch`, for an `AbortSignal` or credentials.
    */
   static async fromURL(url, fetchOptions) {
-    if (typeof ImageDecoder === "undefined") {
-      throw new Error(
-        "This browser has no ImageDecoder, which AnimatedStyleImage needs in order to decode an animated image."
-      );
-    }
     const response = await fetch(url, fetchOptions);
     if (!response.ok) throw new Error(`Could not fetch ${url}: ${response.status} ${response.statusText}.`);
     if (!response.body) throw new Error(`${url} was served with no body.`);
     const contentType = response.headers.get("content-type");
     if (!contentType) throw new Error(`${url} was served with no content-type.`);
     const type = (contentType.split(";")[0] ?? contentType).trim();
+    if (typeof ImageDecoder === "undefined") {
+      if (type !== "image/gif") {
+        throw new Error(
+          `This browser has no ImageDecoder, so it can only load a GIF, but ${url} was served as "${type}".`
+        );
+      }
+      const { decodeFrames } = await import("./chunks/dist-PK3SP3G6.mjs");
+      return new _AnimatedStyleImage(
+        decodeFrames(await response.arrayBuffer()).map(({ width, height, data, delay }) => {
+          premultiply(data);
+          return { width, height, data, duration: delay };
+        })
+      );
+    }
     if (!await ImageDecoder.isTypeSupported(type)) {
       throw new Error(`This browser cannot decode "${type}", which is what ${url} was served as.`);
     }
@@ -115,20 +129,10 @@ var AnimatedStyleImage = class _AnimatedStyleImage extends WebGLStyleImage {
           canvas.height = height;
           context.drawImage(image, 0, 0);
           const data = context.getImageData(0, 0, width, height).data;
-          for (let offset = 0; offset < data.length; offset += 4) {
-            const alpha = (data[offset + 3] ?? 0) / 255;
-            data[offset + 0] = (data[offset + 0] ?? 0) * alpha;
-            data[offset + 1] = (data[offset + 1] ?? 0) * alpha;
-            data[offset + 2] = (data[offset + 2] ?? 0) * alpha;
-          }
+          premultiply(data);
           frames.push({ width, height, data, duration: (image.duration ?? 0) / 1e3 });
         } finally {
           image.close();
-        }
-      }
-      if (frames.length > 1) {
-        for (const frame of frames) {
-          if (frame.duration < 11) frame.duration = 100;
         }
       }
       return new _AnimatedStyleImage(frames);
@@ -220,6 +224,14 @@ var AnimatedStyleImage = class _AnimatedStyleImage extends WebGLStyleImage {
     this._gpu = void 0;
   }
 };
+function premultiply(data) {
+  for (let offset = 0; offset < data.length; offset += 4) {
+    const alpha = (data[offset + 3] ?? 0) / 255;
+    data[offset + 0] = (data[offset + 0] ?? 0) * alpha;
+    data[offset + 1] = (data[offset + 1] ?? 0) * alpha;
+    data[offset + 2] = (data[offset + 2] ?? 0) * alpha;
+  }
+}
 function layOutFrames(width, height, count, maxTextureSize) {
   const columns = Math.min(count, Math.floor(maxTextureSize / width));
   if (columns < 1) return void 0;
@@ -340,9 +352,9 @@ var PulsingDotStyleImage = class extends WebGLStyleImage {
     gl.useProgram(program);
     gl.uniform1f(gl.getUniformLocation(program, "u_dot_radius"), this._dotRadius);
     gl.uniform1f(gl.getUniformLocation(program, "u_stroke_radius"), this._strokeRadius);
-    gl.uniform4fv(gl.getUniformLocation(program, "u_color"), premultiply(this._color));
-    gl.uniform4fv(gl.getUniformLocation(program, "u_stroke_color"), premultiply(this._strokeColor));
-    gl.uniform4fv(gl.getUniformLocation(program, "u_halo_color"), premultiply(this._haloColor));
+    gl.uniform4fv(gl.getUniformLocation(program, "u_color"), premultiply2(this._color));
+    gl.uniform4fv(gl.getUniformLocation(program, "u_stroke_color"), premultiply2(this._strokeColor));
+    gl.uniform4fv(gl.getUniformLocation(program, "u_halo_color"), premultiply2(this._haloColor));
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this.width, this.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -393,7 +405,7 @@ function parseColor(color) {
   const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
   return [(r ?? 0) / 255, (g ?? 0) / 255, (b ?? 0) / 255, (a ?? 0) / 255];
 }
-function premultiply([r, g, b, a]) {
+function premultiply2([r, g, b, a]) {
   return [r * a, g * a, b * a, a];
 }
 export {
