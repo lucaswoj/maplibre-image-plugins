@@ -17,11 +17,11 @@ const map = new Map({
 // The knobs mirror PulsingDotOptions. Every change builds a fresh dot, since the
 // options are baked in at construction.
 const options = {
-    size: 120,
-    color: '#1da1f2',
-    strokeColor: '#ffffff',
-    strokeWidth: 6,
     dotRadius: 17,
+    dotColor: '#1da1f2',
+    strokeRadius: 23,
+    strokeColor: '#ffffff',
+    haloRadius: 60,
     haloColor: '#1da1f2',
     period: 2000,
 };
@@ -32,11 +32,11 @@ function refreshDot() {
 }
 
 const pane = new Pane({container: document.getElementById('pane'), title: 'PulsingDotStyleImage'});
-pane.addBinding(options, 'size', {min: 20, max: 240, step: 1});
-pane.addBinding(options, 'dotRadius', {min: 1, max: 80, step: 1});
-pane.addBinding(options, 'strokeWidth', {min: 0, max: 30, step: 1});
-pane.addBinding(options, 'color');
+pane.addBinding(options, 'dotRadius', {min: 1, max: 120, step: 1});
+pane.addBinding(options, 'dotColor');
+pane.addBinding(options, 'strokeRadius', {min: 0, max: 120, step: 1});
 pane.addBinding(options, 'strokeColor');
+pane.addBinding(options, 'haloRadius', {min: 10, max: 120, step: 1});
 pane.addBinding(options, 'haloColor');
 pane.addBinding(options, 'period', {min: 200, max: 8000, step: 100});
 pane.on('change', refreshDot);

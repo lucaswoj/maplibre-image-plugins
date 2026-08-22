@@ -5,17 +5,17 @@ import {WebGLStyleImage} from './webgl_style_image.ts';
 import type {StyleImageWebGLTarget} from 'maplibre-gl';
 
 export type PulsingDotOptions = {
-    /** Diameter of the whole image in device pixels, halo included. Default 100. */
-    size?: number;
-    /** Fill of the center dot, as any CSS color. Default MapLibre's location-dot blue. */
-    color?: string;
-    /** Ring around the center dot, as any CSS color. Default white. */
-    strokeColor?: string;
-    /** Thickness of that ring in device pixels. Default `size / 20`. */
-    strokeWidth?: number;
-    /** Radius of the center dot in device pixels, stroke excluded. Default `size / 7`. */
+    /** Radius of the center dot in device pixels. Default 15. */
     dotRadius?: number;
-    /** Color the pulse starts at before fading out, as any CSS color. Defaults to `color`. */
+    /** Fill of the center dot, as any CSS color. Default MapLibre's location-dot blue. */
+    dotColor?: string;
+    /** Outer radius of the ring around the dot in device pixels. Default 20. */
+    strokeRadius?: number;
+    /** Color of that ring, as any CSS color. Default white. */
+    strokeColor?: string;
+    /** Radius the pulse grows to in device pixels; also half the image's size. Default 50. */
+    haloRadius?: number;
+    /** Color the pulse starts at before fading out, as any CSS color. Defaults to `dotColor`. */
     haloColor?: string;
     /** One pulse cycle in milliseconds. Default 2000. */
     period?: number;
@@ -72,8 +72,8 @@ type GPUState = {
  * texture and copied into the image's slot in MapLibre's shared atlas with a GPU-to-GPU
  * `copyTexSubImage2D`.
  *
- * Every part of the dot is set by {@link PulsingDotOptions}: size, colors, dot and stroke
- * proportions, and how fast it pulses.
+ * Every part of the dot is set by {@link PulsingDotOptions}: the dot, stroke, and halo each
+ * get a radius and a color, plus how fast it pulses.
  *
  * The image asks to be drawn again on a timer when the next frame is due, rather than on every
  * map frame, so the dot does not stop the map from firing `idle`. Because the frame index is
@@ -82,7 +82,7 @@ type GPUState = {
  *
  * @example
  * ```ts
- * map.addImage('location', new PulsingDotStyleImage({color: 'tomato'}), {pixelRatio: 2});
+ * map.addImage('location', new PulsingDotStyleImage({dotColor: 'tomato'}), {pixelRatio: 2});
  * ```
  */
 export class PulsingDotStyleImage extends WebGLStyleImage {
@@ -101,16 +101,16 @@ export class PulsingDotStyleImage extends WebGLStyleImage {
 
     constructor(options: PulsingDotOptions = {}) {
         super();
-        const size = options.size ?? 100;
-        this.width = size;
-        this.height = size;
+        const haloRadius = options.haloRadius ?? 50;
+        this.width = haloRadius * 2;
+        this.height = haloRadius * 2;
         this._period = options.period ?? 2000;
         // The shader works in the quad's [-1, 1] space, so the pixel radii normalize to it.
-        this._dotRadius = (options.dotRadius ?? size / 7) / (size / 2);
-        this._strokeRadius = this._dotRadius + (options.strokeWidth ?? size / 20) / (size / 2);
-        this._color = parseColor(options.color ?? '#1da1f2');
+        this._dotRadius = (options.dotRadius ?? 15) / haloRadius;
+        this._strokeRadius = (options.strokeRadius ?? 20) / haloRadius;
+        this._color = parseColor(options.dotColor ?? '#1da1f2');
         this._strokeColor = parseColor(options.strokeColor ?? 'white');
-        this._haloColor = parseColor(options.haloColor ?? options.color ?? '#1da1f2');
+        this._haloColor = parseColor(options.haloColor ?? options.dotColor ?? '#1da1f2');
     }
 
     /**

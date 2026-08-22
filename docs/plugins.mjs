@@ -276,15 +276,15 @@ var PulsingDotStyleImage = class extends WebGLStyleImage {
   _setupFailed = false;
   constructor(options = {}) {
     super();
-    const size = options.size ?? 100;
-    this.width = size;
-    this.height = size;
+    const haloRadius = options.haloRadius ?? 50;
+    this.width = haloRadius * 2;
+    this.height = haloRadius * 2;
     this._period = options.period ?? 2e3;
-    this._dotRadius = (options.dotRadius ?? size / 7) / (size / 2);
-    this._strokeRadius = this._dotRadius + (options.strokeWidth ?? size / 20) / (size / 2);
-    this._color = parseColor(options.color ?? "#1da1f2");
+    this._dotRadius = (options.dotRadius ?? 15) / haloRadius;
+    this._strokeRadius = (options.strokeRadius ?? 20) / haloRadius;
+    this._color = parseColor(options.dotColor ?? "#1da1f2");
     this._strokeColor = parseColor(options.strokeColor ?? "white");
-    this._haloColor = parseColor(options.haloColor ?? options.color ?? "#1da1f2");
+    this._haloColor = parseColor(options.haloColor ?? options.dotColor ?? "#1da1f2");
   }
   /**
    * Pick the frame the clock is on, and report whether it differs from the one already

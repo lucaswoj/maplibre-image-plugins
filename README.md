@@ -4,10 +4,10 @@ Animated style image plugins for [MapLibre GL JS](https://github.com/maplibre/ma
 
 `AnimatedStyleImage` animates on the GPU: every frame is uploaded once, and advancing a frame is a single GPU-to-GPU copy into MapLibre's atlas. The map can go idle between frames.
 
-`PulsingDotStyleImage` is a pulsing location dot drawn entirely by a fragment shader, with no image asset or per-frame pixel upload. Size, colors, proportions, and pulse speed are all configurable.
+`PulsingDotStyleImage` is a pulsing location dot drawn entirely by a fragment shader, with no image asset or per-frame pixel upload. The dot, stroke, and halo each take a radius and a color, and the pulse speed is configurable.
 
 ```ts
-map.addImage('location', new PulsingDotStyleImage({color: 'tomato', size: 150}), {pixelRatio: 2});
+map.addImage('location', new PulsingDotStyleImage({dotColor: 'tomato', haloRadius: 75}), {pixelRatio: 2});
 ```
 
 ```ts
