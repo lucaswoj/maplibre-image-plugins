@@ -28,10 +28,11 @@ const vertexSource = `#version 300 es
 in vec2 a_pos;
 out vec2 v_pos;
 void main() {
-    v_pos = a_pos;
     // the icon atlas holds its rows top to bottom and a framebuffer is read bottom to top,
-    // so the y axis is flipped here to cancel out the copy into the atlas
-    gl_Position = vec4(a_pos.x, -a_pos.y, 0.0, 1.0);
+    // so the varying is flipped to draw the image upside down and cancel out the copy into
+    // the atlas; flipping the varying rather than the position keeps v_pos in image space
+    v_pos = vec2(a_pos.x, -a_pos.y);
+    gl_Position = vec4(a_pos, 0.0, 1.0);
 }`;
 
 const fragmentSource = `#version 300 es
@@ -48,7 +49,9 @@ out vec4 fragColor;
 void main() {
     float dist = length(v_pos);
     float aa = fwidth(dist);
-    float haloRadius = mix(u_stroke_radius, 1.0 - aa, u_phase);
+    // the halo stops a pixel short of the slot's edge so that linear filtering at fractional
+    // scales never mixes in the transparent atlas padding along a hard edge
+    float haloRadius = mix(u_stroke_radius, 1.0 - 2.0 * aa, u_phase);
     fragColor = u_halo_color * (1.0 - u_phase) * (1.0 - smoothstep(haloRadius - aa, haloRadius + aa, dist));
     fragColor = mix(fragColor, u_stroke_color, 1.0 - smoothstep(u_stroke_radius - aa, u_stroke_radius + aa, dist));
     fragColor = mix(fragColor, u_color, 1.0 - smoothstep(u_dot_radius - aa, u_dot_radius + aa, dist));
@@ -94,6 +97,7 @@ export class PulsingDotStyleImage extends WebGLStyleImage {
     private readonly _strokeColor: [number, number, number, number];
     private readonly _haloColor: [number, number, number, number];
     private _gpu: GPUState | undefined;
+    private _setupFailed = false;
 
     constructor(options: PulsingDotOptions = {}) {
         super();
@@ -123,7 +127,14 @@ export class PulsingDotStyleImage extends WebGLStyleImage {
     }
 
     protected _paint({gl, texture, x, y, width, height}: StyleImageWebGLTarget): void {
+        // A throw here would take down the map's whole render loop, and a failure would
+        // repeat every frame, so a failed setup is warned about once and the dot goes blank.
+        if (this._setupFailed) return;
         const gpu = (this._gpu ??= this._setup(gl));
+        if (!gpu) {
+            this._setupFailed = true;
+            return;
+        }
 
         // Draw into a private texture, then copy into the slot. Copying rather than drawing
         // into the atlas directly means nothing here can touch another image's pixels.
@@ -143,14 +154,13 @@ export class PulsingDotStyleImage extends WebGLStyleImage {
         gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, x, y, 0, 0, width, height);
     }
 
-    private _setup(gl: WebGL2RenderingContext): GPUState {
+    private _setup(gl: WebGL2RenderingContext): GPUState | undefined {
         const vertexShader = gl.createShader(gl.VERTEX_SHADER);
-        if (!vertexShader) throw new Error('Could not create a WebGL shader for the pulsing dot.');
+        const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+        // createShader only returns null on a lost context, where staying silent is right.
+        if (!vertexShader || !fragmentShader) return undefined;
         gl.shaderSource(vertexShader, vertexSource);
         gl.compileShader(vertexShader);
-
-        const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
-        if (!fragmentShader) throw new Error('Could not create a WebGL shader for the pulsing dot.');
         gl.shaderSource(fragmentShader, fragmentSource);
         gl.compileShader(fragmentShader);
 
@@ -161,7 +171,9 @@ export class PulsingDotStyleImage extends WebGLStyleImage {
         gl.deleteShader(vertexShader);
         gl.deleteShader(fragmentShader);
         if (!gl.getProgramParameter(program, gl.LINK_STATUS) && !gl.isContextLost()) {
-            throw new Error(`Could not link the pulsing dot's shaders: ${gl.getProgramInfoLog(program) ?? ''}`);
+            console.warn(`Could not link the pulsing dot's shaders: ${gl.getProgramInfoLog(program) ?? ''}`);
+            gl.deleteProgram(program);
+            return undefined;
         }
 
         gl.useProgram(program);
@@ -202,6 +214,8 @@ export class PulsingDotStyleImage extends WebGLStyleImage {
     }
 
     protected _releaseGPU(): void {
+        // A different context deserves a fresh try at compiling.
+        this._setupFailed = false;
         if (!this._gpu) return;
         this._gl?.deleteProgram(this._gpu.program);
         this._gl?.deleteFramebuffer(this._gpu.framebuffer);
@@ -212,14 +226,21 @@ export class PulsingDotStyleImage extends WebGLStyleImage {
     }
 }
 
-/** Resolve any CSS color to straight-alpha RGBA in [0, 1], via a 1x1 canvas. */
+/** Resolve any CSS color to straight-alpha RGBA in [0, 1], via a 1x1 canvas. Throws on an invalid color, which would otherwise silently render as opaque black. */
 function parseColor(color: string): [number, number, number, number] {
     const canvas = document.createElement('canvas');
     canvas.width = 1;
     canvas.height = 1;
     const context = canvas.getContext('2d', {willReadFrequently: true});
     if (!context) throw new Error('Could not create a 2d canvas context to parse a color.');
+    // An invalid color leaves fillStyle unchanged, so it is parsed over two different
+    // priors: any valid color resolves the same way both times, an invalid one cannot.
+    context.fillStyle = '#000';
     context.fillStyle = color;
+    const parsed = context.fillStyle;
+    context.fillStyle = '#fff';
+    context.fillStyle = color;
+    if (context.fillStyle !== parsed) throw new Error(`"${color}" is not a valid CSS color.`);
     context.fillRect(0, 0, 1, 1);
     const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
     return [(r ?? 0) / 255, (g ?? 0) / 255, (b ?? 0) / 255, (a ?? 0) / 255];

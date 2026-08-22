@@ -28,7 +28,8 @@ dot.render = () => {
     return updated;
 };
 
-// Main-thread cost of each render pass, measured around the map's own `_render`.
+// Main-thread cost of each render pass, measured around the map's own `_render`. This is CPU
+// submission time, the number the plugin's no-pixel-work pitch is about; GPU time is unmeasured.
 let renderMs = 0;
 const mapRender = map._render.bind(map);
 map._render = (paintStartTimeStamp) => {

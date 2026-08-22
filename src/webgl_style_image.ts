@@ -9,7 +9,9 @@ export abstract class WebGLStyleImage implements StyleImageInterface {
     abstract readonly height: number;
     readonly data: StyleImageWebGLData = {
         renderWithWebGL: (target) => {
-            // A different context means everything built on the previous one died with it.
+            // Not the context-loss path: a restored context is the same object, and loss is
+            // handled through `onRemove`. A genuinely different context means a second map is
+            // painting this instance, so the GPU state is rebuilt for it.
             if (this._gl !== target.gl) {
                 this._releaseGPU();
                 this._gl = target.gl;
@@ -23,12 +25,18 @@ export abstract class WebGLStyleImage implements StyleImageInterface {
     private _timeout: ReturnType<typeof setTimeout> | undefined;
 
     onAdd(map: Map): void {
+        if (this._map && this._map !== map) {
+            console.warn(
+                'This style image is already on another map. GPU state lives on one WebGL context, so a shared instance re-uploads it every frame; create one instance per map.',
+            );
+        }
         this._map = map;
     }
 
     /**
      * Also called on WebGL context loss, after which the same image is reused without a
-     * matching `onAdd`, so this has to leave the object able to start over.
+     * matching `onAdd`, so this has to leave the object able to start over. That is why
+     * `_map` is kept: nothing would set it again.
      */
     onRemove(): void {
         clearTimeout(this._timeout);
@@ -50,7 +58,11 @@ export abstract class WebGLStyleImage implements StyleImageInterface {
         }, delay);
     }
 
-    /** Draw into the image's slot of the atlas. `this._gl` is already `target.gl`. */
+    /**
+     * Draw into the image's slot of the atlas. `this._gl` is already `target.gl`. MapLibre
+     * restores its own GL state afterwards, so nothing set here needs undoing, but every
+     * atlas holding the image paints in the same frame, so this has to be repeatable.
+     */
     protected abstract _paint(target: StyleImageWebGLTarget): void;
 
     /** Delete everything built on `this._gl`. Called on remove and on context change. */

@@ -50,6 +50,7 @@ export class AnimatedStyleImage extends WebGLStyleImage {
     private _frames: Frame[];
     private _index = 0;
     private _gpu: GPUState | undefined;
+    private _uploadFailed = false;
 
     private constructor(frames: Frame[]) {
         super();
@@ -92,8 +93,10 @@ export class AnimatedStyleImage extends WebGLStyleImage {
         if (!response.ok) throw new Error(`Could not fetch ${url}: ${response.status} ${response.statusText}.`);
         if (!response.body) throw new Error(`${url} was served with no body.`);
 
-        const type = response.headers.get('content-type');
-        if (!type) throw new Error(`${url} was served with no content-type.`);
+        const contentType = response.headers.get('content-type');
+        if (!contentType) throw new Error(`${url} was served with no content-type.`);
+        // Servers append parameters like `; charset=binary`, which `ImageDecoder` rejects.
+        const type = (contentType.split(';')[0] ?? contentType).trim();
         if (!(await ImageDecoder.isTypeSupported(type))) {
             throw new Error(`This browser cannot decode "${type}", which is what ${url} was served as.`);
         }
@@ -138,6 +141,13 @@ export class AnimatedStyleImage extends WebGLStyleImage {
                     image.close();
                 }
             }
+            // Browsers show near-zero GIF delays at 100 ms, and a 0 would make `render` skip
+            // the frame entirely, so the same floor is applied here.
+            if (frames.length > 1) {
+                for (const frame of frames) {
+                    if (frame.duration < 11) frame.duration = 100;
+                }
+            }
             return new AnimatedStyleImage(frames);
         } finally {
             decoder.close();
@@ -170,9 +180,15 @@ export class AnimatedStyleImage extends WebGLStyleImage {
     }
 
     protected _paint({gl, texture, x, y, width, height}: StyleImageWebGLTarget): void {
+        // A failed upload would fail the same way every frame, and `MAX_TEXTURE_SIZE` is a
+        // synchronous driver query, so the failure is remembered instead of retried.
+        if (this._uploadFailed) return;
         const gpu = (this._gpu ??= this._upload(gl));
         // A single frame that exceeds the device's texture size cannot be shown at all.
-        if (!gpu) return;
+        if (!gpu) {
+            this._uploadFailed = true;
+            return;
+        }
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, gpu.framebuffer);
         gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -198,6 +214,9 @@ export class AnimatedStyleImage extends WebGLStyleImage {
                 `${this._frames.length} frames of ${this.width}x${this.height} do not fit in this device's maximum texture size of ${maxTextureSize}. The image will not animate.`,
             );
             this._frames = this._frames.slice(0, 1);
+            // `render` ran before this paint and may have committed an index the trimmed
+            // strip no longer holds, which would make the copy read past the texture.
+            this._index = 0;
             columns = layOutFrames(this.width, this.height, 1, maxTextureSize);
         }
         if (columns === undefined) return undefined;
@@ -230,6 +249,8 @@ export class AnimatedStyleImage extends WebGLStyleImage {
     }
 
     protected _releaseGPU(): void {
+        // A different context may allow a larger texture, so a failed upload is retried there.
+        this._uploadFailed = false;
         // Leave the frames in memory: that is how the same instance survives a context loss.
         if (!this._gpu) return;
         this._gl?.deleteFramebuffer(this._gpu.framebuffer);
