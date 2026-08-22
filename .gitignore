@@ -1,2 +1,7 @@
 node_modules
 bench/plugins.mjs
+
+# Built by `npm run build-site`, and by CI before it publishes the demo site.
+docs/plugins.mjs
+docs/chunks
+docs/vendor

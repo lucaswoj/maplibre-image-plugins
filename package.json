@@ -10,7 +10,7 @@
         "test-eslint": "eslint .",
         "test-prettier": "prettier --check .",
         "fix": "prettier --write . && eslint --fix .",
-        "build-site": "esbuild src/index.ts --bundle --format=esm --external:maplibre-gl --splitting --outdir=docs --entry-names=plugins --chunk-names=chunks/[name]-[hash] --out-extension:.js=.mjs && cp node_modules/maplibre-gl/dist/maplibre-gl.mjs node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs node_modules/maplibre-gl/dist/maplibre-gl-worker-dev.mjs node_modules/maplibre-gl/dist/maplibre-gl.css node_modules/tweakpane/dist/tweakpane.min.js docs/vendor/"
+        "build-site": "rm -rf docs/plugins.mjs docs/chunks docs/vendor && mkdir -p docs/vendor && esbuild src/index.ts --bundle --format=esm --external:maplibre-gl --splitting --outdir=docs --entry-names=plugins --chunk-names=chunks/[name]-[hash] --out-extension:.js=.mjs && cp node_modules/maplibre-gl/dist/maplibre-gl.mjs node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs node_modules/maplibre-gl/dist/maplibre-gl-worker-dev.mjs node_modules/maplibre-gl/dist/maplibre-gl.css node_modules/tweakpane/dist/tweakpane.min.js docs/vendor/"
     },
     "peerDependencies": {
         "maplibre-gl": ">=6.5"

@@ -24,7 +24,11 @@ Both plugins wake the map on a timer and let it rest between animation frames. O
 
 ## Demo site
 
-`docs/` is a GitHub Pages site showing both plugins, with Tweakpane controls for the pulsing dot and a live renders-and-idles overlay. `npm run build-site` rebuilds its plugin bundle and vendored dependencies; preview with any static server, e.g. `python3 -m http.server --directory docs`. It builds with `--splitting` so the GIF decoder lands in a lazy chunk under `docs/chunks/` instead of inflating `docs/plugins.mjs`; esbuild inlines a dynamic import when splitting is off.
+`docs/` is a GitHub Pages site showing both plugins, with Tweakpane controls for the pulsing dot and a live renders-and-idles overlay, published at [lucaswoj.github.io/maplibre-image-plugins](https://lucaswoj.github.io/maplibre-image-plugins/).
+
+Only the hand-written sources are committed. `npm run build-site` generates the rest, `docs/plugins.mjs`, `docs/chunks/`, and `docs/vendor/`, all of which are gitignored, so run it once after cloning or nothing loads. Preview with any static server, e.g. `python3 -m http.server --directory docs`. `.github/workflows/pages.yml` runs the same build on every push to `main` and publishes the result, so the live site can never serve a stale bundle.
+
+The build uses `--splitting` so the GIF decoder lands in a lazy chunk under `docs/chunks/` instead of inflating `docs/plugins.mjs`; esbuild inlines a dynamic import when splitting is off.
 
 ## Developing
 
