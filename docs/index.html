@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>maplibre-image-plugins</title>
+        <link rel="icon" href="./spinner.gif" />
+        <link rel="stylesheet" href="./vendor/maplibre-gl.css" />
+        <style>
+            html,
+            body,
+            #map {
+                margin: 0;
+                height: 100%;
+                font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+            }
+            .card {
+                position: absolute;
+                z-index: 1;
+                background: rgba(24, 32, 40, 0.92);
+                color: #dce8f2;
+                border-radius: 6px;
+                padding: 10px 14px;
+                font-size: 12px;
+                line-height: 1.6;
+                max-width: 340px;
+            }
+            .card a {
+                color: #7fd4ff;
+            }
+            #about {
+                top: 10px;
+                left: 10px;
+            }
+            #about h1 {
+                margin: 0;
+                font-size: 14px;
+            }
+            #about p {
+                margin: 6px 0 0;
+            }
+            #stats {
+                bottom: 30px;
+                left: 10px;
+                white-space: pre;
+            }
+            #pane {
+                position: absolute;
+                z-index: 1;
+                top: 10px;
+                right: 10px;
+                width: 280px;
+            }
+            #pane .tp-rotv {
+                font-family: inherit;
+            }
+        </style>
+        <script type="importmap">
+            {"imports": {"maplibre-gl": "./vendor/maplibre-gl.mjs"}}
+        </script>
+    </head>
+    <body>
+        <div id="map"></div>
+        <div id="about" class="card">
+            <h1>maplibre-image-plugins</h1>
+            <p>
+                Animated style images for MapLibre GL JS, drawn on the GPU. The pulsing dot is pure fragment shader; the
+                spinners are a GIF decoded once and blitted frame by frame. The map goes idle between frames.
+            </p>
+            <p><a href="https://github.com/lucaswoj/maplibre-image-plugins">source on GitHub</a></p>
+        </div>
+        <div id="stats" class="card">loading&hellip;</div>
+        <div id="pane"></div>
+        <script type="module" src="./main.js"></script>
+    </body>
+</html>

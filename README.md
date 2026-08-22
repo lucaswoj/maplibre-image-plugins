@@ -20,6 +20,10 @@ Requires maplibre-gl >= 6.5, the first release with `StyleImageWebGLData` suppor
 
 Both plugins wake the map on a timer and let it rest between animation frames. On maplibre-gl 6.5 and older, each frame still drags a ~300 ms tail of extra renders out of the symbol placement machinery, unless the map is created with `fadeDuration: 0`. [maplibre-gl-js#8208](https://github.com/maplibre/maplibre-gl-js/pull/8208) removes the tail; once it ships, the map idles between frames with no configuration.
 
+## Demo site
+
+`docs/` is a GitHub Pages site showing both plugins, with Tweakpane controls for the pulsing dot and a live renders-and-idles overlay. `npm run build-site` rebuilds its plugin bundle and vendored dependencies; preview with any static server, e.g. `python3 -m http.server --directory docs`.
+
 ## Developing
 
 ```
