@@ -37,7 +37,11 @@ type Frame = {
 export class AnimatedStyleImage implements StyleImageInterface {
     width: number;
     height: number;
-    readonly data: StyleImageWebGLData = {renderWithWebGL: (target) => this._paint(target)};
+    readonly data: StyleImageWebGLData = {
+        renderWithWebGL: (target) => {
+            this._paint(target);
+        },
+    };
 
     private _frames: Frame[];
     private _totalDuration: number;
@@ -52,9 +56,11 @@ export class AnimatedStyleImage implements StyleImageInterface {
     private _framebuffer: WebGLFramebuffer | undefined;
 
     private constructor(frames: Frame[]) {
+        const first = frames[0];
+        if (!first) throw new Error('An animated image needs at least one frame.');
         this._frames = frames;
-        this.width = frames[0].width;
-        this.height = frames[0].height;
+        this.width = first.width;
+        this.height = first.height;
         this._totalDuration = frames.reduce((sum, frame) => sum + frame.duration, 0);
 
         for (const [i, frame] of frames.entries()) {
@@ -90,7 +96,8 @@ export class AnimatedStyleImage implements StyleImageInterface {
         if (!response.ok) throw new Error(`Could not fetch ${url}: ${response.status} ${response.statusText}.`);
 
         const type = response.headers.get('content-type');
-        if (!type || !(await ImageDecoder.isTypeSupported(type))) {
+        if (!type) throw new Error(`${url} was served with no content-type.`);
+        if (!(await ImageDecoder.isTypeSupported(type))) {
             throw new Error(`This browser cannot decode "${type}", which is what ${url} was served as.`);
         }
 
@@ -223,10 +230,10 @@ export class AnimatedStyleImage implements StyleImageInterface {
         // MapLibre's atlas holds premultiplied pixels, so the copies out of the strip only
         // land correctly if the strip matches.
         for (let i = 0; i < strip.length; i += 4) {
-            const alpha = strip[i + 3] / 255;
-            strip[i + 0] *= alpha;
-            strip[i + 1] *= alpha;
-            strip[i + 2] *= alpha;
+            const alpha = (strip[i + 3] ?? 0) / 255;
+            strip[i + 0] = (strip[i + 0] ?? 0) * alpha;
+            strip[i + 1] = (strip[i + 1] ?? 0) * alpha;
+            strip[i + 2] = (strip[i + 2] ?? 0) * alpha;
         }
 
         this._gl = gl;

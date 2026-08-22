@@ -19,3 +19,5 @@ npm install
 npm test
 npm run fix
 ```
+
+`@eslint/js` is pinned to `^9` because v10 requires eslint 10; bump the two together.

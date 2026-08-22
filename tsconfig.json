@@ -17,11 +17,12 @@
         "noUncheckedSideEffectImports": true,
         "allowUnreachableCode": false,
         "allowUnusedLabels": false,
-        "exactOptionalPropertyTypes": false,
+        "exactOptionalPropertyTypes": true,
         "forceConsistentCasingInFileNames": true,
         "noImplicitOverride": true,
         "noImplicitReturns": true,
-        "noUncheckedIndexedAccess": false
+        "noUncheckedIndexedAccess": true,
+        "verbatimModuleSyntax": true
     },
     "include": ["src/**/*.ts", "eslint.config.js"]
 }
