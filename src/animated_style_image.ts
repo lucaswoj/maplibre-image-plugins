@@ -1,13 +1,22 @@
 import {now} from 'maplibre-gl';
 
-import type {Map, StyleImageInterface, StyleImageWebGLData, StyleImageWebGLTarget} from 'maplibre-gl';
+import {WebGLStyleImage} from './webgl_style_image.ts';
+
+import type {StyleImageWebGLTarget} from 'maplibre-gl';
 
 type Frame = {
     width: number;
     height: number;
+    /** Premultiplied-alpha RGBA pixels, matching MapLibre's atlas. */
     data: Uint8ClampedArray;
     /** How long this frame is shown before advancing to the next, in milliseconds. */
     duration: number;
+};
+
+type GPUState = {
+    strip: WebGLTexture;
+    framebuffer: WebGLFramebuffer;
+    columns: number;
 };
 
 /**
@@ -34,34 +43,21 @@ type Frame = {
  * map.addImage('spinner', await AnimatedStyleImage.fromURL('/spinner.gif'), {pixelRatio: 2});
  * ```
  */
-export class AnimatedStyleImage implements StyleImageInterface {
-    width: number;
-    height: number;
-    readonly data: StyleImageWebGLData = {
-        renderWithWebGL: (target) => {
-            this._paint(target);
-        },
-    };
+export class AnimatedStyleImage extends WebGLStyleImage {
+    readonly width: number;
+    readonly height: number;
 
     private _frames: Frame[];
-    private _totalDuration: number;
-    private _map: Map | undefined;
     private _index = 0;
-    private _timeout: ReturnType<typeof setTimeout> | undefined;
-
-    /** `undefined` until the frames are known to fit in one texture. */
-    private _columns: number | undefined;
-    private _gl: WebGL2RenderingContext | undefined;
-    private _strip: WebGLTexture | undefined;
-    private _framebuffer: WebGLFramebuffer | undefined;
+    private _gpu: GPUState | undefined;
 
     private constructor(frames: Frame[]) {
+        super();
         const first = frames[0];
         if (!first) throw new Error('An animated image needs at least one frame.');
         this._frames = frames;
         this.width = first.width;
         this.height = first.height;
-        this._totalDuration = frames.reduce((sum, frame) => sum + frame.duration, 0);
 
         for (const [i, frame] of frames.entries()) {
             // The strip is a uniform grid and the atlas reserves a single slot, so a frame
@@ -94,6 +90,7 @@ export class AnimatedStyleImage implements StyleImageInterface {
 
         const response = await fetch(url, fetchOptions);
         if (!response.ok) throw new Error(`Could not fetch ${url}: ${response.status} ${response.statusText}.`);
+        if (!response.body) throw new Error(`${url} was served with no body.`);
 
         const type = response.headers.get('content-type');
         if (!type) throw new Error(`${url} was served with no content-type.`);
@@ -101,7 +98,9 @@ export class AnimatedStyleImage implements StyleImageInterface {
             throw new Error(`This browser cannot decode "${type}", which is what ${url} was served as.`);
         }
 
-        const decoder = new ImageDecoder({data: await response.arrayBuffer(), type});
+        // Handing the decoder the stream, rather than a buffered copy, lets decoding overlap
+        // the download.
+        const decoder = new ImageDecoder({data: response.body, type});
         try {
             // `selectedTrack` is null until the track list is populated, and the frame count
             // on it is only final once the whole image has been buffered.
@@ -110,12 +109,31 @@ export class AnimatedStyleImage implements StyleImageInterface {
             const frameCount = decoder.tracks.selectedTrack?.frameCount;
             if (!frameCount) throw new Error(`${url} decoded to no frames.`);
 
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d', {willReadFrequently: true});
+            if (!context) throw new Error('Could not create a 2d canvas context to convert decoded frames.');
+
             const frames: Frame[] = [];
             for (let i = 0; i < frameCount; i++) {
                 const {image} = await decoder.decode({frameIndex: i});
                 try {
+                    const {displayWidth: width, displayHeight: height} = image;
+                    canvas.width = width;
+                    canvas.height = height;
+                    // A 2d canvas normalizes whatever pixel format the decoder hands back,
+                    // which may be BGRA or YUV, to straight-alpha RGBA.
+                    context.drawImage(image, 0, 0);
+                    const data = context.getImageData(0, 0, width, height).data;
+                    // MapLibre's atlas holds premultiplied pixels. Premultiplying once here
+                    // keeps every upload, including re-uploads after a context loss, copy-only.
+                    for (let offset = 0; offset < data.length; offset += 4) {
+                        const alpha = (data[offset + 3] ?? 0) / 255;
+                        data[offset + 0] = (data[offset + 0] ?? 0) * alpha;
+                        data[offset + 1] = (data[offset + 1] ?? 0) * alpha;
+                        data[offset + 2] = (data[offset + 2] ?? 0) * alpha;
+                    }
                     // `VideoFrame.duration` is in microseconds, and is null for a still image.
-                    frames.push({...videoFrameToRGBA(image), duration: (image.duration ?? 0) / 1000});
+                    frames.push({width, height, data, duration: (image.duration ?? 0) / 1000});
                 } finally {
                     image.close();
                 }
@@ -126,46 +144,14 @@ export class AnimatedStyleImage implements StyleImageInterface {
         }
     }
 
-    onAdd(map: Map): void {
-        this._map = map;
-        // The draw callback hands us a `gl`, but the strip has to be laid out before the first one.
-        // Asking the canvas for `webgl2` again returns the context MapLibre already made.
-        const gl = map.getCanvas().getContext('webgl2');
-        if (!gl) throw new Error('AnimatedStyleImage needs the map to be rendering with WebGL2.');
-        const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
-
-        this._columns = layOutFrames(this.width, this.height, this._frames.length, maxTextureSize);
-        if (this._columns !== undefined) return;
-
-        // Degrade to a still of frame 0, rather than throwing out of `addImage` and leaving a
-        // half-added image behind.
-        console.warn(
-            `${this._frames.length} frames of ${this.width}x${this.height} do not fit in this device's maximum texture size of ${maxTextureSize}. The image will not animate.`,
-        );
-        this._frames = this._frames.slice(0, 1);
-        this._totalDuration = 0;
-        this._columns = layOutFrames(this.width, this.height, 1, maxTextureSize);
-    }
-
-    /**
-     * Also called on WebGL context loss, after which the same image is reused without a
-     * matching `onAdd`, so this has to leave the object able to start over.
-     */
-    onRemove(): void {
-        clearTimeout(this._timeout);
-        this._timeout = undefined;
-        this._releaseGPU();
-    }
-
     /**
      * Pick the frame the clock is on, and report whether it differs from the one already
      * painted. Waking the map on a timer, rather than on every frame, is what lets it go idle
      * in between.
      */
     render(): boolean {
-        if (this._columns === undefined) return false;
-
-        let remaining = this._totalDuration > 0 ? now() % this._totalDuration : 0;
+        const totalDuration = this._frames.reduce((sum, frame) => sum + frame.duration, 0);
+        let remaining = totalDuration > 0 ? now() % totalDuration : 0;
         let index = this._frames.length - 1;
         let delay = Infinity;
         for (const [i, frame] of this._frames.entries()) {
@@ -176,44 +162,46 @@ export class AnimatedStyleImage implements StyleImageInterface {
             }
             remaining -= frame.duration;
         }
-
-        // A pending timer is already set for that same moment, so leave it alone: re-arming on
-        // every paint costs two timer calls per painted frame for nothing.
-        if (this._timeout === undefined && delay < Infinity) {
-            this._timeout = setTimeout(() => {
-                this._timeout = undefined;
-                this._map?.triggerRepaint();
-            }, delay);
-        }
+        this._scheduleRepaint(delay);
 
         if (index === this._index) return false;
         this._index = index;
         return true;
     }
 
-    private _paint({gl, texture, x, y, width, height}: StyleImageWebGLTarget): void {
-        const columns = this._columns;
-        if (columns === undefined) return;
+    protected _paint({gl, texture, x, y, width, height}: StyleImageWebGLTarget): void {
+        const gpu = (this._gpu ??= this._upload(gl));
+        // A single frame that exceeds the device's texture size cannot be shown at all.
+        if (!gpu) return;
 
-        // A different context means the old strip died with the previous one.
-        if (this._gl !== gl) this._releaseGPU();
-        if (!this._strip) this._upload(gl, columns);
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this._framebuffer ?? null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, gpu.framebuffer);
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.copyTexSubImage2D(
             gl.TEXTURE_2D,
             0,
             x,
             y,
-            (this._index % columns) * width,
-            Math.floor(this._index / columns) * height,
+            (this._index % gpu.columns) * width,
+            Math.floor(this._index / gpu.columns) * height,
             width,
             height,
         );
     }
 
-    private _upload(gl: WebGL2RenderingContext, columns: number): void {
+    private _upload(gl: WebGL2RenderingContext): GPUState | undefined {
+        const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+        let columns = layOutFrames(this.width, this.height, this._frames.length, maxTextureSize);
+        if (columns === undefined && this._frames.length > 1) {
+            // Degrade to a still of frame 0 rather than breaking the map's render loop.
+            // Trimming the frames makes the warning and the retry happen only once.
+            console.warn(
+                `${this._frames.length} frames of ${this.width}x${this.height} do not fit in this device's maximum texture size of ${maxTextureSize}. The image will not animate.`,
+            );
+            this._frames = this._frames.slice(0, 1);
+            columns = layOutFrames(this.width, this.height, 1, maxTextureSize);
+        }
+        if (columns === undefined) return undefined;
+
         const rows = Math.ceil(this._frames.length / columns);
         const stripWidth = columns * this.width;
         const strip = new Uint8Array(stripWidth * rows * this.height * 4);
@@ -227,34 +215,26 @@ export class AnimatedStyleImage implements StyleImageInterface {
                 );
             }
         }
-        // MapLibre's atlas holds premultiplied pixels, so the copies out of the strip only
-        // land correctly if the strip matches.
-        for (let i = 0; i < strip.length; i += 4) {
-            const alpha = (strip[i + 3] ?? 0) / 255;
-            strip[i + 0] = (strip[i + 0] ?? 0) * alpha;
-            strip[i + 1] = (strip[i + 1] ?? 0) * alpha;
-            strip[i + 2] = (strip[i + 2] ?? 0) * alpha;
-        }
 
-        this._gl = gl;
-        this._strip = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, this._strip);
+        const stripTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, stripTexture);
         // The strip is only ever read by `copyTexSubImage2D`, never sampled, so it needs no
         // filtering or wrap state. The sized format keeps it color-renderable.
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, stripWidth, rows * this.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, strip);
 
-        this._framebuffer = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this._framebuffer);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._strip, 0);
+        const framebuffer = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, stripTexture, 0);
+
+        return {strip: stripTexture, framebuffer, columns};
     }
 
-    private _releaseGPU(): void {
+    protected _releaseGPU(): void {
         // Leave the frames in memory: that is how the same instance survives a context loss.
-        this._gl?.deleteFramebuffer(this._framebuffer ?? null);
-        this._gl?.deleteTexture(this._strip ?? null);
-        this._gl = undefined;
-        this._strip = undefined;
-        this._framebuffer = undefined;
+        if (!this._gpu) return;
+        this._gl?.deleteFramebuffer(this._gpu.framebuffer);
+        this._gl?.deleteTexture(this._gpu.strip);
+        this._gpu = undefined;
     }
 }
 
@@ -268,18 +248,4 @@ export function layOutFrames(width: number, height: number, count: number, maxTe
     if (columns < 1) return undefined;
     if (Math.ceil(count / columns) * height > maxTextureSize) return undefined;
     return columns;
-}
-
-/** Convert a decoded frame to raw straight-alpha RGBA pixels. */
-function videoFrameToRGBA(frame: VideoFrame): {width: number; height: number; data: Uint8ClampedArray} {
-    const {displayWidth: width, displayHeight: height} = frame;
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    // A 2d canvas normalizes whatever pixel format the decoder hands back, which may be BGRA
-    // or YUV, to straight-alpha RGBA.
-    const context = canvas.getContext('2d', {willReadFrequently: true});
-    if (!context) throw new Error('Could not create a 2d canvas context to convert a decoded frame.');
-    context.drawImage(frame, 0, 0);
-    return {width, height, data: context.getImageData(0, 0, width, height).data};
 }

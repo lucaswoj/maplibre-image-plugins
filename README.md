@@ -29,3 +29,5 @@ npm run fix
 ```
 
 `@eslint/js` is pinned to `^9` because v10 requires eslint 10; bump the two together.
+
+`bench/` measures the pulsing dot against a maplibre build: build `bench/plugins.mjs` with the esbuild command in `bench/index.html`, serve the parent folder of this repo, and open the page with `?maplibre=npm` or `?maplibre=local` (a sibling `maplibre-gl-js` checkout's `dist`). At the floor, frames, renders, and idles per second are all 30. Note the maplibre ESM dist has no default export; import `{Map}` by name.

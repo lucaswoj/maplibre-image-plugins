@@ -3,7 +3,7 @@ import {defineConfig} from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-    {ignores: ['node_modules']},
+    {ignores: ['bench/plugins.mjs']},
     js.configs.recommended,
     tseslint.configs.strictTypeChecked,
     tseslint.configs.stylisticTypeChecked,
@@ -15,4 +15,16 @@ export default defineConfig(
         },
     },
     {files: ['**/*.js'], extends: [tseslint.configs.disableTypeChecked]},
+    {
+        files: ['bench/**/*.js'],
+        languageOptions: {
+            globals: {
+                URLSearchParams: 'readonly',
+                location: 'readonly',
+                performance: 'readonly',
+                setTimeout: 'readonly',
+                window: 'readonly',
+            },
+        },
+    },
 );

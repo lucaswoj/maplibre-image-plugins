@@ -1,6 +1,8 @@
 import {now} from 'maplibre-gl';
 
-import type {Map, StyleImageInterface, StyleImageWebGLData, StyleImageWebGLTarget} from 'maplibre-gl';
+import {WebGLStyleImage} from './webgl_style_image.ts';
+
+import type {StyleImageWebGLTarget} from 'maplibre-gl';
 
 export type PulsingDotOptions = {
     /** Diameter of the whole image in device pixels, halo included. Default 100. */
@@ -52,6 +54,15 @@ void main() {
     fragColor = mix(fragColor, u_color, 1.0 - smoothstep(u_dot_radius - aa, u_dot_radius + aa, dist));
 }`;
 
+type GPUState = {
+    program: WebGLProgram;
+    phaseUniform: WebGLUniformLocation | null;
+    texture: WebGLTexture;
+    framebuffer: WebGLFramebuffer;
+    buffer: WebGLBuffer;
+    vertexArray: WebGLVertexArrayObject;
+};
+
 /**
  * A pulsing location dot for {@link Map.addImage}, drawn entirely by a fragment shader: no
  * image asset, no canvas, no per-frame pixel upload. Each frame is rendered into a private
@@ -71,34 +82,21 @@ void main() {
  * map.addImage('location', new PulsingDotStyleImage({color: 'tomato'}), {pixelRatio: 2});
  * ```
  */
-export class PulsingDotStyleImage implements StyleImageInterface {
+export class PulsingDotStyleImage extends WebGLStyleImage {
     readonly width: number;
     readonly height: number;
-    readonly data: StyleImageWebGLData = {
-        renderWithWebGL: (target) => {
-            this._paint(target);
-        },
-    };
 
     private readonly _period: number;
     private _frame = -1;
-    private _timeout: ReturnType<typeof setTimeout> | undefined;
     private readonly _dotRadius: number;
     private readonly _strokeRadius: number;
     private readonly _color: [number, number, number, number];
     private readonly _strokeColor: [number, number, number, number];
     private readonly _haloColor: [number, number, number, number];
-
-    private _map: Map | undefined;
-    private _gl: WebGL2RenderingContext | undefined;
-    private _program: WebGLProgram | undefined;
-    private _phaseUniform: WebGLUniformLocation | undefined;
-    private _texture: WebGLTexture | undefined;
-    private _framebuffer: WebGLFramebuffer | undefined;
-    private _buffer: WebGLBuffer | undefined;
-    private _vertexArray: WebGLVertexArrayObject | undefined;
+    private _gpu: GPUState | undefined;
 
     constructor(options: PulsingDotOptions = {}) {
+        super();
         const size = options.size ?? 100;
         this.width = size;
         this.height = size;
@@ -111,66 +109,41 @@ export class PulsingDotStyleImage implements StyleImageInterface {
         this._haloColor = parseColor(options.haloColor ?? options.color ?? '#1da1f2');
     }
 
-    onAdd(map: Map): void {
-        this._map = map;
-    }
-
-    /**
-     * Also called on WebGL context loss, after which the same image is reused without a
-     * matching `onAdd`, so this has to leave the object able to start over.
-     */
-    onRemove(): void {
-        clearTimeout(this._timeout);
-        this._timeout = undefined;
-        this._releaseGPU();
-    }
-
     /**
      * Pick the frame the clock is on, and report whether it differs from the one already
      * painted. Waking the map on a timer at 30 fps, rather than on every map frame, is what
      * lets it go idle in between.
      */
     render(): boolean {
-        // A pending timer is already set for that same moment, so leave it alone: re-arming on
-        // every paint costs two timer calls per painted frame for nothing.
-        this._timeout ??= setTimeout(
-            () => {
-                this._timeout = undefined;
-                this._map?.triggerRepaint();
-            },
-            FRAME_INTERVAL - (now() % FRAME_INTERVAL),
-        );
-
+        this._scheduleRepaint(FRAME_INTERVAL - (now() % FRAME_INTERVAL));
         const frame = Math.floor(now() / FRAME_INTERVAL);
         if (frame === this._frame) return false;
         this._frame = frame;
         return true;
     }
 
-    private _paint({gl, texture, x, y, width, height}: StyleImageWebGLTarget): void {
-        // A different context means everything built on the previous one died with it.
-        if (this._gl !== gl) this._releaseGPU();
-        if (!this._program) this._setup(gl);
+    protected _paint({gl, texture, x, y, width, height}: StyleImageWebGLTarget): void {
+        const gpu = (this._gpu ??= this._setup(gl));
 
         // Draw into a private texture, then copy into the slot. Copying rather than drawing
         // into the atlas directly means nothing here can touch another image's pixels.
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this._framebuffer ?? null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, gpu.framebuffer);
         gl.viewport(0, 0, width, height);
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
         gl.disable(gl.SCISSOR_TEST);
-        gl.useProgram(this._program ?? null);
+        gl.useProgram(gpu.program);
         // The same quantized clock as `render`, so the painted phase matches the reported frame.
         const time = this._frame * FRAME_INTERVAL;
-        gl.uniform1f(this._phaseUniform ?? null, (time % this._period) / this._period);
-        gl.bindVertexArray(this._vertexArray ?? null);
+        gl.uniform1f(gpu.phaseUniform, (time % this._period) / this._period);
+        gl.bindVertexArray(gpu.vertexArray);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
 
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, x, y, 0, 0, width, height);
     }
 
-    private _setup(gl: WebGL2RenderingContext): void {
+    private _setup(gl: WebGL2RenderingContext): GPUState {
         const vertexShader = gl.createShader(gl.VERTEX_SHADER);
         if (!vertexShader) throw new Error('Could not create a WebGL shader for the pulsing dot.');
         gl.shaderSource(vertexShader, vertexSource);
@@ -192,7 +165,6 @@ export class PulsingDotStyleImage implements StyleImageInterface {
         }
 
         gl.useProgram(program);
-        this._phaseUniform = gl.getUniformLocation(program, 'u_phase') ?? undefined;
         gl.uniform1f(gl.getUniformLocation(program, 'u_dot_radius'), this._dotRadius);
         gl.uniform1f(gl.getUniformLocation(program, 'u_stroke_radius'), this._strokeRadius);
         // The atlas holds premultiplied pixels, so the colors are premultiplied here and the
@@ -201,41 +173,42 @@ export class PulsingDotStyleImage implements StyleImageInterface {
         gl.uniform4fv(gl.getUniformLocation(program, 'u_stroke_color'), premultiply(this._strokeColor));
         gl.uniform4fv(gl.getUniformLocation(program, 'u_halo_color'), premultiply(this._haloColor));
 
-        this._texture = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, this._texture);
+        const texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this.width, this.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        this._framebuffer = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this._framebuffer);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._texture, 0);
+        const framebuffer = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
 
         // One triangle covering the whole viewport, in its own vertex array so that this
         // image cannot disturb the attributes MapLibre has set up.
-        this._buffer = gl.createBuffer();
-        this._vertexArray = gl.createVertexArray();
-        gl.bindVertexArray(this._vertexArray);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this._buffer);
+        const buffer = gl.createBuffer();
+        const vertexArray = gl.createVertexArray();
+        gl.bindVertexArray(vertexArray);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
         const posAttribute = gl.getAttribLocation(program, 'a_pos');
         gl.enableVertexAttribArray(posAttribute);
         gl.vertexAttribPointer(posAttribute, 2, gl.FLOAT, false, 0, 0);
 
-        this._gl = gl;
-        this._program = program;
+        return {
+            program,
+            phaseUniform: gl.getUniformLocation(program, 'u_phase'),
+            texture,
+            framebuffer,
+            buffer,
+            vertexArray,
+        };
     }
 
-    private _releaseGPU(): void {
-        this._gl?.deleteProgram(this._program ?? null);
-        this._gl?.deleteFramebuffer(this._framebuffer ?? null);
-        this._gl?.deleteTexture(this._texture ?? null);
-        this._gl?.deleteBuffer(this._buffer ?? null);
-        this._gl?.deleteVertexArray(this._vertexArray ?? null);
-        this._gl = undefined;
-        this._program = undefined;
-        this._phaseUniform = undefined;
-        this._texture = undefined;
-        this._framebuffer = undefined;
-        this._buffer = undefined;
-        this._vertexArray = undefined;
+    protected _releaseGPU(): void {
+        if (!this._gpu) return;
+        this._gl?.deleteProgram(this._gpu.program);
+        this._gl?.deleteFramebuffer(this._gpu.framebuffer);
+        this._gl?.deleteTexture(this._gpu.texture);
+        this._gl?.deleteBuffer(this._gpu.buffer);
+        this._gl?.deleteVertexArray(this._gpu.vertexArray);
+        this._gpu = undefined;
     }
 }
 
