@@ -17,6 +17,8 @@ export type PulsingDotOptions = {
     haloColor?: string;
     /** One pulse cycle in milliseconds. Default 2000. */
     period?: number;
+    /** Frames per second to animate at. Lower is cheaper: the map can rest between frames. Default 30. */
+    fps?: number;
 };
 
 const vertexSource = `#version 300 es
@@ -57,7 +59,12 @@ void main() {
  * `copyTexSubImage2D`.
  *
  * Every part of the dot is set by {@link PulsingDotOptions}: size, colors, dot and stroke
- * proportions, and how fast it pulses.
+ * proportions, how fast it pulses, and at how many frames per second.
+ *
+ * The image asks to be drawn again on a timer when the next frame is due, rather than on every
+ * map frame, so the dot does not stop the map from firing `idle`. Because the frame index is
+ * derived from the clock rather than incremented, the pulse stays on schedule no matter how
+ * often the map actually paints.
  *
  * @example
  * ```ts
@@ -74,6 +81,9 @@ export class PulsingDotStyleImage implements StyleImageInterface {
     };
 
     private readonly _period: number;
+    private readonly _frameInterval: number;
+    private _frame = -1;
+    private _timeout: ReturnType<typeof setTimeout> | undefined;
     private readonly _dotRadius: number;
     private readonly _strokeRadius: number;
     private readonly _color: [number, number, number, number];
@@ -94,6 +104,7 @@ export class PulsingDotStyleImage implements StyleImageInterface {
         this.width = size;
         this.height = size;
         this._period = options.period ?? 2000;
+        this._frameInterval = 1000 / (options.fps ?? 30);
         // The shader works in the quad's [-1, 1] space, so the pixel radii normalize to it.
         this._dotRadius = (options.dotRadius ?? size / 7) / (size / 2);
         this._strokeRadius = this._dotRadius + (options.strokeWidth ?? size / 20) / (size / 2);
@@ -111,12 +122,30 @@ export class PulsingDotStyleImage implements StyleImageInterface {
      * matching `onAdd`, so this has to leave the object able to start over.
      */
     onRemove(): void {
+        clearTimeout(this._timeout);
+        this._timeout = undefined;
         this._releaseGPU();
     }
 
-    /** The pulse moves every frame, so every call reports dirty and asks for the next one. */
+    /**
+     * Pick the frame the clock is on, and report whether it differs from the one already
+     * painted. Waking the map on a timer at `fps`, rather than on every map frame, is what
+     * lets it go idle in between.
+     */
     render(): boolean {
-        this._map?.triggerRepaint();
+        // A pending timer is already set for that same moment, so leave it alone: re-arming on
+        // every paint costs two timer calls per painted frame for nothing.
+        this._timeout ??= setTimeout(
+            () => {
+                this._timeout = undefined;
+                this._map?.triggerRepaint();
+            },
+            this._frameInterval - (now() % this._frameInterval),
+        );
+
+        const frame = Math.floor(now() / this._frameInterval);
+        if (frame === this._frame) return false;
+        this._frame = frame;
         return true;
     }
 
@@ -133,7 +162,9 @@ export class PulsingDotStyleImage implements StyleImageInterface {
         gl.disable(gl.DEPTH_TEST);
         gl.disable(gl.SCISSOR_TEST);
         gl.useProgram(this._program ?? null);
-        gl.uniform1f(this._phaseUniform ?? null, (now() % this._period) / this._period);
+        // The same quantized clock as `render`, so the painted phase matches the reported frame.
+        const time = this._frame * this._frameInterval;
+        gl.uniform1f(this._phaseUniform ?? null, (time % this._period) / this._period);
         gl.bindVertexArray(this._vertexArray ?? null);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
 
