@@ -16,13 +16,14 @@ const map = new Map({
 
 // The knobs mirror PulsingDotOptions. Every change builds a fresh dot, since the
 // options are baked in at construction.
+// Warm, so the dot does not vanish over the countries demotiles renders blue.
 const options = {
     dotRadius: 17,
-    dotColor: '#1da1f2',
+    dotColor: '#ff5a1f',
     strokeRadius: 23,
     strokeColor: '#ffffff',
     haloRadius: 60,
-    haloColor: '#1da1f2',
+    haloColor: '#ff5a1f',
     period: 2000,
 };
 
@@ -89,10 +90,7 @@ map.on('load', async () => {
                 type: 'FeatureCollection',
                 features: [
                     [-74, 40.7],
-                    [-43.2, -22.9],
-                    [18.4, -33.9],
                     [77.2, 28.6],
-                    [151.2, -33.9],
                 ].map((coordinates) => ({type: 'Feature', geometry: {type: 'Point', coordinates}})),
             },
         });
@@ -103,7 +101,8 @@ map.on('load', async () => {
             layout: {'icon-image': 'spinner', 'icon-allow-overlap': true},
         });
     } catch (error) {
-        // Firefox and Safari have no ImageDecoder yet; the pulsing dot still works there.
+        // Safari has no ImageDecoder, so it takes the GIF fallback and this should not fire;
+        // the pulsing dot works regardless.
         spinnerNote = `\nspinner    unavailable: ${error.message}`;
     }
 });
