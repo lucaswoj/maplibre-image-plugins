@@ -18,6 +18,8 @@ map.addImage('spinner', await AnimatedStyleImage.fromURL('/spinner.gif'), {pixel
 
 Requires maplibre-gl >= 6.5, the first release with `StyleImageWebGLData` support.
 
+Both plugins wake the map on a timer and let it rest between animation frames. On maplibre-gl 6.5 and older, each frame still drags a ~300 ms tail of extra renders out of the symbol placement machinery, unless the map is created with `fadeDuration: 0`. [maplibre-gl-js#8208](https://github.com/maplibre/maplibre-gl-js/pull/8208) removes the tail; once it ships, the map idles between frames with no configuration.
+
 ## Developing
 
 ```
