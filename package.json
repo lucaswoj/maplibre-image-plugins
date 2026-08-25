@@ -1,8 +1,22 @@
 {
     "name": "maplibre-image-plugins",
-    "version": "0.0.0",
+    "version": "0.1.0",
     "description": "Animated style image plugins for MapLibre GL JS",
     "license": "MIT",
+    "author": "Lucas Wojciechowski <hello@lucaswoj.com>",
+    "repository": "github:lucaswoj/maplibre-image-plugins",
+    "homepage": "https://lucaswoj.github.io/maplibre-image-plugins/",
+    "keywords": [
+        "maplibre",
+        "maplibre-gl",
+        "styleimageinterface",
+        "animated",
+        "gif",
+        "webgl",
+        "pulsing-dot",
+        "map"
+    ],
+    "sideEffects": false,
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
