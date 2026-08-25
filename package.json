@@ -4,7 +4,10 @@
     "description": "Animated style image plugins for MapLibre GL JS",
     "license": "MIT",
     "author": "Lucas Wojciechowski <hello@lucaswoj.com>",
-    "repository": "github:lucaswoj/maplibre-image-plugins",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/lucaswoj/maplibre-image-plugins.git"
+    },
     "homepage": "https://lucaswoj.github.io/maplibre-image-plugins/",
     "keywords": [
         "maplibre",
