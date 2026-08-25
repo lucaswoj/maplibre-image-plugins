@@ -1,5 +1,7 @@
 # maplibre-image-plugins
 
+**[Live demo](https://lucaswoj.github.io/maplibre-image-plugins/)**: both plugins on a real map, with controls for the pulsing dot.
+
 Animated style image plugins for [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js), built on the public `StyleImageInterface` API. Any animated format the browser's `ImageDecoder` understands works: GIF, animated WebP, APNG, animated AVIF.
 
 Safari has no `ImageDecoder`, so there GIF alone works, decoded by [`modern-gif`](https://github.com/qq15725/modern-gif) loaded on demand. WebKit landed the WebCodecs image API in August 2026 ([bug 315546](https://bugs.webkit.org/show_bug.cgi?id=315546)), enabled by default, so the fallback can go once that ships. `modern-gif` is the one that returns fully composited, uniform-size frames honouring disposal 0-3; `gifuct-js` and `omggif` return patches and leave the compositing to you, and `decode-gif` gets it wrong by allocating a fresh zeroed buffer per frame.
