@@ -14,6 +14,9 @@ const map = new Map({
     fadeDuration: 0,
 });
 
+// For the Playwright integration test.
+window.map = map;
+
 // The knobs mirror PulsingDotOptions. Every change builds a fresh dot, since the
 // options are baked in at construction.
 // Warm, so the dot does not vanish over the countries demotiles renders blue.

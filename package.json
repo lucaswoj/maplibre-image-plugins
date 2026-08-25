@@ -33,6 +33,7 @@
         "build-dist": "rm -rf dist && tsc --project tsconfig.build.json",
         "prepack": "npm run build-dist",
         "test": "npm run test-tsc && npm run test-eslint && npm run test-prettier",
+        "test-integration": "playwright test",
         "test-tsc": "tsc --noEmit",
         "test-eslint": "eslint .",
         "test-prettier": "prettier --check .",
@@ -44,6 +45,8 @@
     },
     "devDependencies": {
         "@eslint/js": "^9.39.5",
+        "@playwright/test": "^1.62.1",
+        "@types/node": "^26.3.0",
         "esbuild": "^0.28.2",
         "eslint": "^9.34.0",
         "maplibre-gl": "^6.5.0",

@@ -23,5 +23,5 @@
         "noUncheckedIndexedAccess": true,
         "verbatimModuleSyntax": true
     },
-    "include": ["src/**/*.ts", "eslint.config.js"]
+    "include": ["src/**/*.ts", "test/**/*.ts", "eslint.config.js", "playwright.config.ts"]
 }

@@ -38,6 +38,8 @@ npm test
 npm run fix
 ```
 
+`npm run test-integration` drives the demo site with Playwright: it builds `docs/`, serves it with esbuild, and checks that both plugins load, the canvas animates, and the map reaches `idle`. Run `npx playwright install chromium` once first. It fetches the demotiles style from the network.
+
 `@eslint/js` is pinned to `^9` because v10 requires eslint 10; bump the two together.
 
 `bench/` measures the pulsing dot against a maplibre build: build `bench/plugins.mjs` with the esbuild command in `bench/index.html`, serve the parent folder of this repo, and open the page with `?maplibre=npm` or `?maplibre=local` (a sibling `maplibre-gl-js` checkout's `dist`). At the floor, frames, renders, and idles per second are all 30. Note the maplibre ESM dist has no default export; import `{Map}` by name.

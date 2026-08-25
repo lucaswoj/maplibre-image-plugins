@@ -3,3 +3,5 @@ docs/plugins.mjs
 docs/chunks
 docs/vendor
 dist
+test-results
+playwright-report
