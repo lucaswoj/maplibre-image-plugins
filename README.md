@@ -8,17 +8,37 @@ Safari has no `ImageDecoder`, so there GIF alone works, decoded by [`modern-gif`
 
 `PulsingDotStyleImage` is a pulsing location dot drawn entirely by a fragment shader, with no image asset or per-frame pixel upload. The dot, stroke, and halo each take a radius and a color, and the pulse speed is configurable.
 
-```ts
-map.addImage('location', new PulsingDotStyleImage({dotColor: 'tomato', haloRadius: 75}), {pixelRatio: 2});
+## Getting started
+
+```
+npm install maplibre-image-plugins
 ```
 
-```ts
-import {AnimatedStyleImage} from 'maplibre-image-plugins';
+maplibre-gl >= 6.5, the first release with `StyleImageWebGLData` support, is a peer dependency.
 
+```ts
+import {AnimatedStyleImage, PulsingDotStyleImage} from 'maplibre-image-plugins';
+
+map.addImage('location', new PulsingDotStyleImage({dotColor: 'tomato', haloRadius: 75}), {pixelRatio: 2});
 map.addImage('spinner', await AnimatedStyleImage.fromURL('/spinner.gif'), {pixelRatio: 2});
 ```
 
-Requires maplibre-gl >= 6.5, the first release with `StyleImageWebGLData` support.
+Without a bundler, everything loads from unpkg. The import map resolves the package's `maplibre-gl` import plus the GIF decoder it lazy-loads on browsers without `ImageDecoder`:
+
+```html
+<script type="importmap">
+    {
+        "imports": {
+            "maplibre-gl": "https://unpkg.com/maplibre-gl@^6.5.0/dist/maplibre-gl.mjs",
+            "modern-gif": "https://unpkg.com/modern-gif@^2.1.0/dist/index.mjs",
+            "modern-palette": "https://unpkg.com/modern-palette@^2.0.0/dist/index.mjs"
+        }
+    }
+</script>
+<script type="module">
+    import {PulsingDotStyleImage} from 'https://unpkg.com/maplibre-image-plugins@^0.1.0/dist/index.js';
+</script>
+```
 
 Both plugins wake the map on a timer and let it rest between animation frames. On releases without [maplibre-gl-js#8208](https://github.com/maplibre/maplibre-gl-js/pull/8208) (unmerged as of maplibre-gl 6.6), each frame drags a ~300 ms tail of extra renders out of the symbol placement machinery unless the map is created with `fadeDuration: 0`. On releases that include it, the map idles between frames with no configuration.
 
