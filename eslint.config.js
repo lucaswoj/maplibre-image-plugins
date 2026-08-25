@@ -3,7 +3,7 @@ import {defineConfig} from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-    {ignores: ['bench/plugins.mjs', 'docs/plugins.mjs', 'docs/chunks', 'docs/vendor']},
+    {ignores: ['bench/plugins.mjs', 'dist', 'docs/plugins.mjs', 'docs/chunks', 'docs/vendor']},
     js.configs.recommended,
     tseslint.configs.strictTypeChecked,
     tseslint.configs.stylisticTypeChecked,

@@ -3,8 +3,20 @@
     "version": "0.0.0",
     "description": "Animated style image plugins for MapLibre GL JS",
     "type": "module",
-    "main": "src/index.ts",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist"
+    ],
     "scripts": {
+        "build-dist": "rm -rf dist && tsc --project tsconfig.build.json",
+        "prepack": "npm run build-dist",
         "test": "npm run test-tsc && npm run test-eslint && npm run test-prettier",
         "test-tsc": "tsc --noEmit",
         "test-eslint": "eslint .",

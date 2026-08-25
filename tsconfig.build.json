@@ -1,0 +1,13 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "noEmit": false,
+        "declaration": true,
+        // Rewrites .ts specifiers to .js in emitted JS only. The .d.ts files keep .ts
+        // specifiers, which consumer tsc resolves to the sibling .d.ts (verified under
+        // moduleResolution bundler and node16).
+        "rewriteRelativeImportExtensions": true,
+        "outDir": "dist"
+    },
+    "include": ["src/**/*.ts"]
+}
