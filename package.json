@@ -1,6 +1,6 @@
 {
     "name": "maplibre-image-plugins",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Animated style image plugins for MapLibre GL JS",
     "license": "MIT",
     "author": "Lucas Wojciechowski <hello@lucaswoj.com>",
