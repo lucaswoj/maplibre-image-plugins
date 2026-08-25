@@ -9,8 +9,7 @@ const map = new Map({
     center: [-20, 35],
     zoom: 1.8,
     attributionControl: {compact: true},
-    // Lets the map idle between animation frames on stock 6.5.0; unneeded once
-    // maplibre-gl-js#8208 ships.
+    // Lets the map idle between animation frames on releases without maplibre-gl-js#8208.
     fadeDuration: 0,
 });
 
