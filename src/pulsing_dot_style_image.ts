@@ -13,7 +13,7 @@ export type PulsingDotOptions = {
     strokeRadius?: number;
     /** Color of that ring, as any CSS color. Default white. */
     strokeColor?: string;
-    /** Radius the pulse grows to in device pixels; also half the image's size. Default 50. */
+    /** Radius the pulse grows to in device pixels. Default 50. */
     haloRadius?: number;
     /** Color the pulse starts at before fading out, as any CSS color. Defaults to `dotColor`. */
     haloColor?: string;
@@ -41,6 +41,7 @@ precision highp float;
 uniform float u_phase;
 uniform float u_dot_radius;
 uniform float u_stroke_radius;
+uniform float u_halo_radius;
 uniform vec4 u_color;
 uniform vec4 u_stroke_color;
 uniform vec4 u_halo_color;
@@ -49,12 +50,15 @@ out vec4 fragColor;
 void main() {
     float dist = length(v_pos);
     float aa = fwidth(dist);
-    // the halo stops a pixel short of the slot's edge so that linear filtering at fractional
-    // scales never mixes in the transparent atlas padding along a hard edge
-    float haloRadius = mix(u_stroke_radius, 1.0 - 2.0 * aa, u_phase);
+    // the largest radius stops a pixel short of the slot's edge so that linear filtering at
+    // fractional scales never mixes in the transparent atlas padding along a hard edge
+    float edge = 1.0 - 2.0 * aa;
+    float haloRadius = mix(u_stroke_radius, min(u_halo_radius, edge), u_phase);
+    float strokeRadius = min(u_stroke_radius, edge);
+    float dotRadius = min(u_dot_radius, edge);
     fragColor = u_halo_color * (1.0 - u_phase) * (1.0 - smoothstep(haloRadius - aa, haloRadius + aa, dist));
-    fragColor = mix(fragColor, u_stroke_color, 1.0 - smoothstep(u_stroke_radius - aa, u_stroke_radius + aa, dist));
-    fragColor = mix(fragColor, u_color, 1.0 - smoothstep(u_dot_radius - aa, u_dot_radius + aa, dist));
+    fragColor = mix(fragColor, u_stroke_color, 1.0 - smoothstep(strokeRadius - aa, strokeRadius + aa, dist));
+    fragColor = mix(fragColor, u_color, 1.0 - smoothstep(dotRadius - aa, dotRadius + aa, dist));
 }`;
 
 type GPUState = {
@@ -93,6 +97,7 @@ export class PulsingDotStyleImage extends WebGLStyleImage {
     private _frame = -1;
     private readonly _dotRadius: number;
     private readonly _strokeRadius: number;
+    private readonly _haloRadius: number;
     private readonly _color: [number, number, number, number];
     private readonly _strokeColor: [number, number, number, number];
     private readonly _haloColor: [number, number, number, number];
@@ -101,13 +106,19 @@ export class PulsingDotStyleImage extends WebGLStyleImage {
 
     constructor(options: PulsingDotOptions = {}) {
         super();
+        const dotRadius = options.dotRadius ?? 15;
+        const strokeRadius = options.strokeRadius ?? 20;
         const haloRadius = options.haloRadius ?? 50;
-        this.width = haloRadius * 2;
-        this.height = haloRadius * 2;
+        // The image fits the largest of the three radii, so a dot or stroke bigger than the
+        // halo is not squared off at the slot's edge.
+        const radius = Math.max(dotRadius, strokeRadius, haloRadius);
+        this.width = radius * 2;
+        this.height = radius * 2;
         this._period = options.period ?? 2000;
         // The shader works in the quad's [-1, 1] space, so the pixel radii normalize to it.
-        this._dotRadius = (options.dotRadius ?? 15) / haloRadius;
-        this._strokeRadius = (options.strokeRadius ?? 20) / haloRadius;
+        this._dotRadius = dotRadius / radius;
+        this._strokeRadius = strokeRadius / radius;
+        this._haloRadius = haloRadius / radius;
         this._color = parseColor(options.dotColor ?? '#1da1f2');
         this._strokeColor = parseColor(options.strokeColor ?? 'white');
         this._haloColor = parseColor(options.haloColor ?? options.dotColor ?? '#1da1f2');
@@ -179,6 +190,7 @@ export class PulsingDotStyleImage extends WebGLStyleImage {
         gl.useProgram(program);
         gl.uniform1f(gl.getUniformLocation(program, 'u_dot_radius'), this._dotRadius);
         gl.uniform1f(gl.getUniformLocation(program, 'u_stroke_radius'), this._strokeRadius);
+        gl.uniform1f(gl.getUniformLocation(program, 'u_halo_radius'), this._haloRadius);
         // The atlas holds premultiplied pixels, so the colors are premultiplied here and the
         // shader mixes in that space.
         gl.uniform4fv(gl.getUniformLocation(program, 'u_color'), premultiply(this._color));
