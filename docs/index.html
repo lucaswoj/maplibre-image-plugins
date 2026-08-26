@@ -51,8 +51,38 @@
                 right: 10px;
                 width: 280px;
             }
+            /* Theme the pane like the cards: same background, text color, font, and size. */
             #pane .tp-rotv {
                 font-family: inherit;
+                font-size: 12px;
+                --tp-base-background-color: rgba(24, 32, 40, 0.92);
+                --tp-base-shadow-color: transparent;
+                --tp-container-foreground-color: #dce8f2;
+                --tp-label-foreground-color: #dce8f2;
+                --tp-input-foreground-color: #dce8f2;
+                --tp-button-background-color: #7fd4ff;
+                --tp-button-background-color-hover: #99ddff;
+                --tp-button-background-color-focus: #a6e2ff;
+                --tp-button-background-color-active: #b3e6ff;
+                --tp-button-foreground-color: #182028;
+            }
+            /* Too narrow for the cards and pane side by side: stack them in one column. */
+            @media (max-width: 640px) {
+                #overlay {
+                    position: absolute;
+                    z-index: 1;
+                    inset: 10px 10px auto;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                }
+                #about,
+                #stats,
+                #pane {
+                    position: static;
+                    width: auto;
+                    max-width: none;
+                }
             }
         </style>
         <script type="importmap">
@@ -61,16 +91,19 @@
     </head>
     <body>
         <div id="map"></div>
-        <div id="about" class="card">
-            <h1>maplibre-image-plugins</h1>
-            <p>
-                Animated style images for MapLibre GL JS, drawn on the GPU. The pulsing dot is pure fragment shader; the
-                spinners are a GIF decoded once and blitted frame by frame. The map goes idle between frames.
-            </p>
-            <p><a href="https://github.com/lucaswoj/maplibre-image-plugins">source on GitHub</a></p>
+        <div id="overlay">
+            <div id="about" class="card">
+                <h1>maplibre-image-plugins</h1>
+                <p>
+                    Animated style images for MapLibre GL JS, drawn on the GPU. The pulsing dot is pure fragment shader;
+                    the spinners are a GIF decoded once and blitted frame by frame. The map goes idle between frames.
+                    Unlike a DOM overlay, the dot renders beneath the map's labels.
+                </p>
+                <p><a href="https://github.com/lucaswoj/maplibre-image-plugins">source on GitHub</a></p>
+            </div>
+            <div id="pane"></div>
+            <div id="stats" class="card">loading&hellip;</div>
         </div>
-        <div id="stats" class="card">loading&hellip;</div>
-        <div id="pane"></div>
         <script type="module" src="./main.js"></script>
     </body>
 </html>

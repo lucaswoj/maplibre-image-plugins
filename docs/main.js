@@ -6,8 +6,9 @@ import {AnimatedStyleImage, PulsingDotStyleImage} from './plugins.mjs';
 const map = new Map({
     container: 'map',
     style: 'https://demotiles.maplibre.org/style.json',
+    // Zoom 2 is where demotiles' country labels appear, so the z-ordering shows immediately.
     center: [-20, 35],
-    zoom: 1.8,
+    zoom: 2,
     attributionControl: {compact: true},
     // Lets the map idle between animation frames on releases without maplibre-gl-js#8208.
     fadeDuration: 0,
@@ -34,7 +35,12 @@ function refreshDot() {
     map.addImage('location', new PulsingDotStyleImage(options), {pixelRatio: 2});
 }
 
-const pane = new Pane({container: document.getElementById('pane'), title: 'PulsingDotStyleImage'});
+const pane = new Pane({
+    container: document.getElementById('pane'),
+    title: 'PulsingDotStyleImage',
+    // Collapsed on phones, where the stacked overlay would otherwise cover the map.
+    expanded: !window.matchMedia('(max-width: 640px)').matches,
+});
 pane.addBinding(options, 'dotRadius', {min: 1, max: 120, step: 1});
 pane.addBinding(options, 'dotColor');
 pane.addBinding(options, 'strokeRadius', {min: 0, max: 120, step: 1});
@@ -75,14 +81,20 @@ map.on('load', async () => {
     refreshDot();
     map.addSource('location', {
         type: 'geojson',
-        data: {type: 'Feature', geometry: {type: 'Point', coordinates: [-0.1, 51.5]}},
+        // Just southwest of Spain's label anchor, so the pulse sweeps under the label.
+        data: {type: 'Feature', geometry: {type: 'Point', coordinates: [-6.5, 38.5]}},
     });
-    map.addLayer({
-        id: 'location',
-        type: 'symbol',
-        source: 'location',
-        layout: {'icon-image': 'location', 'icon-allow-overlap': true},
-    });
+    // Inserted beneath the style's labels to show off z-ordering, something a DOM overlay
+    // cannot do. ignore-placement keeps the dot from colliding those labels away.
+    map.addLayer(
+        {
+            id: 'location',
+            type: 'symbol',
+            source: 'location',
+            layout: {'icon-image': 'location', 'icon-allow-overlap': true, 'icon-ignore-placement': true},
+        },
+        'geolines-label',
+    );
 
     try {
         map.addImage('spinner', await AnimatedStyleImage.fromURL('./spinner.gif'), {pixelRatio: 2});
