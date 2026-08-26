@@ -4,7 +4,7 @@
 
 Animated style image plugins for [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js), built on the public `StyleImageInterface` API. Any animated format the browser's `ImageDecoder` understands works: GIF, animated WebP, APNG, animated AVIF.
 
-`AnimatedStyleImage` animates on the GPU: every frame is uploaded once, and advancing a frame is a single GPU-to-GPU copy into MapLibre's atlas. The map can go idle between frames.
+`AnimatedStyleImage` animates on the GPU: every frame is uploaded once, and advancing a frame is a single GPU-to-GPU copy into MapLibre's atlas. The map can go idle between frames. This rides on [maplibre-gl-js#7954](https://github.com/maplibre/maplibre-gl-js/pull/7954), which lets a style image render straight into the icon atlas via `StyleImageWebGLData` instead of rewriting pixels on the CPU: with 50 animated 256 px icons, that PR measured 18.0 ms per frame the old way against 0.64 ms on the GPU, about 28x, and more on phones where CPU time is scarcer.
 
 `PulsingDotStyleImage` is a pulsing location dot drawn entirely by a fragment shader, with no image asset or per-frame pixel upload. The dot, stroke, and halo each take a radius and a color, and the pulse speed is configurable.
 
@@ -42,7 +42,7 @@ Without a bundler, everything loads from unpkg. The import map resolves the pack
 </script>
 ```
 
-Both plugins wake the map on a timer and let it rest between animation frames. On releases without [maplibre-gl-js#8208](https://github.com/maplibre/maplibre-gl-js/pull/8208) (unmerged as of maplibre-gl 6.6), each frame drags a ~300 ms tail of extra renders out of the symbol placement machinery unless the map is created with `fadeDuration: 0`. On releases that include it, the map idles between frames with no configuration.
+Both plugins wake the map on a timer and let it rest between animation frames. On releases without [maplibre-gl-js#8208](https://github.com/maplibre/maplibre-gl-js/pull/8208) (merged, not yet in a release as of maplibre-gl 6.6), each frame drags a ~300 ms tail of extra renders and symbol re-placements out of the placement machinery unless the map is created with `fadeDuration: 0`: one 30 fps animated icon on an otherwise static map meant 88 renders/s and 2.7 idles/s. On releases that include it, the same map renders 30 frames a second and idles 30 times a second with no configuration.
 
 ## Developing
 
